@@ -2,20 +2,42 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+
 const multer = require("multer");
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
+
 const path = require("path");
 const ExcelJS = require('exceljs');
 const { generateCertificate, sendEmail } = require('../utils/sendcertificate');
 
-// Multer setup
-const storage = multer.diskStorage({
-  destination: "uploads/",
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
+// Replace diskStorage with CloudinaryStorage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'my-app-uploads', // your Cloudinary folder name
+    format: async (req, file) => {
+      const ext = path.extname(file.originalname).slice(1).toLowerCase();
+      return ext === 'jpg' ? 'jpeg' : ext;
+    },
+    public_id: (req, file) => Date.now().toString(),
   },
 });
+
+
 const upload = multer({ storage });
+
+
 
 const formatDate = (inputDate) => {
   const date = new Date(inputDate);
@@ -31,12 +53,10 @@ const formatDate = (inputDate) => {
 router.get("/", async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM programs");
-    rows.forEach(program => {
 
-      if (program.image) {
-        program.image = `http://localhost:5000/uploads/${program.image}`;
-      }
-    });
+
+    
+
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -51,13 +71,7 @@ router.get("/", async (req, res) => {
 router.get("/non-complete", async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM programs WHERE completed = FALSE");
-
-    rows.forEach(event => {
-      if (event.image) {
-        event.image = `http://localhost:5000/uploads/${event.image}`;
-      }
-    });
-
+    
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -102,7 +116,7 @@ router.post("/",
     try {
       console.log("Request body:", req.body);
       console.log("File:", req.file);
- 
+
       const {
         title,
         description,
@@ -120,14 +134,14 @@ router.post("/",
         email
       } = req.body;
 
-       // 🔥 Correct usage for multiple fields
-      const imageFile = req.files?.image?.[0];
-      const qrcodeFile = req.files?.qrcode?.[0];
+      // 🔥 Correct usage for multiple fields
+      // const imageFile = req.files?.image?.[0];
+      // const qrcodeFile = req.files?.qrcode?.[0];
 
-      const image = imageFile ? imageFile.filename : null;
-      const qrcode = qrcodeFile ? qrcodeFile.filename : null;
+      const image = req.files['image'] ? req.files['image'][0].path : null;
+      const qrcode = req.files['qrcode'] ? req.files['qrcode'][0].path : null;
 
-      
+
       const formattedDate = formatDate(date);
       const formattedStartDate = formatDate(startDate);
       const formattedEndDate = formatDate(endDate);
@@ -196,123 +210,6 @@ router.get("/check-attendance", async (req, res) => {
 });
 
 
- // PUT - Update a program
-// router.put("/:id",
-//   // upload.single("image"),
-//   upload.fields([
-//     { name: "image", maxCount: 1 },
-//     { name: "qrcode", maxCount: 1 },
-//   ]),
-//   async (req, res) => {
-//     const { id } = req.params;
-//     const {
-//       title,
-//       description,
-//       price,
-//       isFree,
-//       isCertified,
-//       isLive,
-//       duration,
-//       date,
-//       startDate,
-//       endDate,
-//       category,
-//       limit,
-//       location,
-//       email
-//     } = req.body;
-
-//     // const image = req.file ? req.file.filename : null;
-//     //       const qrcodeFile = req.files?.qrcode?.[0];
-//     const imageFile = req.files?.image?.[0];
-//     const qrcodeFile = req.files?.qrcode?.[0];
-
-//     const image = imageFile ? imageFile.filename : null;
-//     const qrcode = qrcodeFile ? qrcodeFile.filename : null;
-
-//     const formattedDate = formatDate(date);
-//     const formattedStartDate = formatDate(startDate);
-//     const formattedEndDate = formatDate(endDate);
-
-// // "isCertified = ?",
-// //         "isLive = ?",
-// //         "duration = ?",
-       
-
-//     try {
-//       // Build query dynamically depending on whether image is updated
-//       const fields = [
-//         "title = ?",
-//         "description = ?",
-//         "price = ?",
-//         "isFree = ?",
-//          "date = ?",
-//          "duration = ?",
-//         "start_date = ?",
-//         "end_date = ?",
-//         "category = ?",
-//         "attendance_limit = ?",
-//         "location = ?",
-//         "email = ?" 
-
-//       ];
-
-//       const values = [
-//         title,
-//         description,
-//         price,
-//         // isFree === "true" || isFree === true ? 1 : 0,
-//         // isCertified === "true" || isCertified === true ? 1 : 0,
-//         // isLive === "true" || isLive === true ? 1 : 0, duration,
-//         duration,
-//         formattedDate,
-//         formattedStartDate,
-//         formattedEndDate,
-//         category,
-//         limit || 0,
-//         location,
-//         email
-//       ];
-
-//          if (isFree !== undefined) {
-//         fields.push("isFree = ?");
-//         values.push(isFree === "true" || isFree === true ? 1 : 0);
-//       }
-
-//       if (isCertified !== undefined) {
-//         fields.push("isCertified = ?");
-//         values.push(isCertified === "true" || isCertified === true ? 1 : 0);
-//       }
-
-//       if (isLive !== undefined) {
-//         fields.push("isLive = ?");
-//         values.push(isLive === "true" || isLive === true ? 1 : 0);
-//       }
-
-//       if (image) {
-//         fields.push("image = ?");
-//         values.push(image);
-//       }
-//       if (qrcode) {
-//         fields.push("qrcode = ?");
-//         values.push(qrcode);
-//       }
-
-
-//       values.push(id); // for WHERE clause
-
-//       const query = `UPDATE programs SET ${fields.join(", ")} WHERE id = ?`;
-//       await db.query(query, values);
-
-//       res.json({ message: "Program updated successfully" });
-//     } catch (err) {
-//       console.error("Error updating program:", err);
-//       res.status(500).json({ error: "Failed to update program" });
-//     }
-//   });
-
-//
-
 //Update a program
 router.put("/:id",
   upload.fields([
@@ -341,8 +238,8 @@ router.put("/:id",
     const imageFile = req.files?.image?.[0];
     const qrcodeFile = req.files?.qrcode?.[0];
 
-    const image = imageFile ? imageFile.filename : null;
-    const qrcode = qrcodeFile ? qrcodeFile.filename : null;
+    const image = imageFile ? imageFile.path : null;     // ✅ Cloudinary URL
+    const qrcode = qrcodeFile ? qrcodeFile.path : null;  // ✅ Cloudinary URL
 
     const formattedDate = date ? formatDate(date) : null;
     const formattedStartDate = startDate ? formatDate(startDate) : null;
@@ -492,7 +389,7 @@ router.get("/", async (req, res) => {
     // Attach isEnrolled flag and adjust image URL
     const result = programs.map(program => ({
       ...program,
-      image: program.image ? `http://localhost:5000/uploads/${program.image}` : "",
+      image: program.image || "", 
       isFree: Boolean(program.isFree),
       isCertified: Boolean(program.isCertified),
       isLive: Boolean(program.isLive),
@@ -692,15 +589,15 @@ router.put("/:programId/mark-participation", async (req, res) => {
         "UPDATE program_attendees SET participated = TRUE WHERE program_id = ? AND guest_email = ? AND participated = FALSE",
         [programId, guestEmail]
       );
-    }  else if (userId) {
-          // Mark participation by user ID
-          [result] = await db.query(
-            "UPDATE program_attendees SET participated = TRUE WHERE program_id = ? AND user_id = ? AND participated = FALSE",
-            [programId, userId]
-          );
-        } else {
-          return res.status(400).json({ error: "Either userId or guestEmail must be provided" });
-        }
+    } else if (userId) {
+      // Mark participation by user ID
+      [result] = await db.query(
+        "UPDATE program_attendees SET participated = TRUE WHERE program_id = ? AND user_id = ? AND participated = FALSE",
+        [programId, userId]
+      );
+    } else {
+      return res.status(400).json({ error: "Either userId or guestEmail must be provided" });
+    }
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Already marked or not found" });

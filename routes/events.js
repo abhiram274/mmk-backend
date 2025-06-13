@@ -1,22 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+
 const multer = require("multer");
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
+
 const path = require("path");
 const { Parser } = require('json2csv');
 const ExcelJS = require('exceljs');
 const { generateCertificate, sendEmail } = require('../utils/sendcertificate');
 
 
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-// Multer setup
-const storage = multer.diskStorage({
-  destination: "uploads/",
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+
+// Replace diskStorage with CloudinaryStorage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'my-app-uploads', // your Cloudinary folder name
+    format: async (req, file) => {
+      const ext = path.extname(file.originalname).slice(1).toLowerCase();
+      return ext === 'jpg' ? 'jpeg' : ext;
+    },
+    public_id: (req, file) => Date.now().toString(),
   },
 });
+
 const upload = multer({ storage });
 
 
@@ -36,12 +52,17 @@ const formatDate = (inputDate) => {
 router.get("/", async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM events");
-    rows.forEach(event => {
 
-      if (event.image) {
-        event.image = `http://localhost:5000/uploads/${event.image}`;
-      }
-    });
+    // rows.forEach(event => {
+
+    //   if (event.image) {
+    //     event.image = `${event.image}`;
+    //   }
+    // });
+    
+
+   
+
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -54,13 +75,8 @@ router.get("/", async (req, res) => {
 // Get all *non-completed* events
 router.get("/non-complete", async (req, res) => {
   try {
-    const [rows] = await db.query("SELECT * FROM events WHERE completed = FALSE");
+    const [rows] = await db.query("SELECT * FROM events WHERE completed = FALSE ORDER BY id DESC");
 
-    rows.forEach(event => {
-      if (event.image) {
-        event.image = `http://localhost:5000/uploads/${event.image}`;
-      }
-    });
 
     res.json(rows);
   } catch (err) {
@@ -107,8 +123,9 @@ router.post("/",
 
       } = req.body;
 
-      const image = req.file ? req.file.filename : null;
-      const qrcode = req.files.qrcode ? req.files.qrcode[0].filename : null;
+      const image = req.files['image'] ? req.files['image'][0].path : null;
+      const qrcode = req.files['qrcode'] ? req.files['qrcode'][0].path : null;
+
 
       const formattedDate = formatDate(date); // replace 'date' from req.body
       const formattedStartDate = startDate ? formatDate(startDate) : null;
@@ -151,13 +168,13 @@ router.post("/user-create-event",
         user_id, user_name, email // 🔥 Passed from frontend
       } = req.body;
 
-const image = req.files["image"]
-  ? req.files["image"][0].filename
-  : null;
+      const image = req.files["image"]
+        ? req.files["image"][0].filename
+        : null;
 
-const qrcode = req.files["qrcode"]
-  ? req.files["qrcode"][0].filename
-  : null;
+      const qrcode = req.files["qrcode"]
+        ? req.files["qrcode"][0].filename
+        : null;
 
       const formattedDate = formatDate(date);
       const formattedStartDate = startDate ? formatDate(startDate) : null;
@@ -188,33 +205,6 @@ const qrcode = req.files["qrcode"]
 
 
 
-
-// In routes/events.js or a new route file
-router.get("/check-attendance", async (req, res) => {
-  const { userId, eventId } = req.query;
-
-  if (!userId || !eventId) {
-    return res.status(400).json({ error: "Missing userId or eventId" });
-  }
-
-  try {
-    const [rows] = await db.query(
-      "SELECT * FROM event_attendees WHERE user_id = ? AND event_id = ?",
-      [userId, eventId]
-    );
-
-    if (rows.length > 0) {
-      res.json({ alreadyJoined: true });
-    } else {
-      res.json({ alreadyJoined: false });
-    }
-  } catch (err) {
-    console.error("Error checking attendance:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-
 // Update event
 router.put("/:id",
   // upload.single("image"),
@@ -231,8 +221,8 @@ router.put("/:id",
       const imageFile = req.files?.image?.[0];
       const qrcodeFile = req.files?.qrcode?.[0];
 
-      const image = imageFile ? imageFile.filename : null;
-      const qrcode = qrcodeFile ? qrcodeFile.filename : null;
+      const image = imageFile ? imageFile.path : null;     // ✅ Cloudinary URL
+      const qrcode = qrcodeFile ? qrcodeFile.path : null;  // ✅ Cloudinary URL
 
       const formattedDate = formatDate(date);
       const formattedStartDate = formatDate(startDate);
@@ -300,6 +290,33 @@ router.get('/user-events/:userId', async (req, res) => {
 });
 
 
+
+
+
+// In routes/events.js or a new route file
+router.get("/check-attendance", async (req, res) => {
+  const { userId, eventId } = req.query;
+
+  if (!userId || !eventId) {
+    return res.status(400).json({ error: "Missing userId or eventId" });
+  }
+
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM event_attendees WHERE user_id = ? AND event_id = ?",
+      [userId, eventId]
+    );
+
+    if (rows.length > 0) {
+      res.json({ alreadyJoined: true });
+    } else {
+      res.json({ alreadyJoined: false });
+    }
+  } catch (err) {
+    console.error("Error checking attendance:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 
 // GET user info by user_id
@@ -517,52 +534,6 @@ router.put("/:eventId/mark-participation", async (req, res) => {
     return res.status(500).json({ error: "Server error" });
   }
 });
-
-
-//Mark user as participated
-// router.put("/:eventId/mark-participation", async (req, res) => {
-//   const { userId, guestEmail } = req.body;
-//   const eventId = req.params.eventId;
-
-//   console.log("➡️ EventID:", eventId);
-//   console.log("➡️ userId:", userId);
-//   console.log("➡️ guestEmail:", guestEmail);
-
-
-
-//   try {
-//     let result;
-
-// if (guestEmail) {
-//   [result] = await db.query(
-//     "UPDATE event_attendees SET participated = TRUE WHERE event_id = ? AND guest_email = ? AND participated = FALSE",
-//     [eventId, guestEmail]
-//   );
-// }
-//     else if (userId) {
-// [result] = await db.query(
-//   "UPDATE event_attendees SET participated = TRUE WHERE event_id = ? AND user_id = ? AND participated = FALSE",
-//   [eventId, userId]
-// );
-//     }
-
-//     else {
-//       return res.status(404).json({ message: "error" });
-
-//     }
-
-//     if (result.affectedRows === 0) {
-//       return res.status(404).json({ message: "Already marked or not found" });
-//     }
-
-//     res.json({ message: "Participation marked successfully" });
-//   } catch (err) {
-//     console.error("❌ Error marking participation:", err);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
-
-
 
 
 

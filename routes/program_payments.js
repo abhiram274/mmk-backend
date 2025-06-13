@@ -1,24 +1,42 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+
 const multer = require("multer");
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
+
+
 const path = require("path");
 const nodemailer = require("nodemailer");
 const fs = require('fs');
 require("dotenv").config();
 
 
-// Setup multer to store uploaded files in "uploads/" folder
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/"); // use existing folder
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `payment-${uniqueSuffix}${ext}`);
+
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
+// Replace diskStorage with CloudinaryStorage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'my-app-uploads', // your Cloudinary folder name
+    format: async (req, file) => {
+      const ext = path.extname(file.originalname).slice(1).toLowerCase();
+      return ext === 'jpg' ? 'jpeg' : ext;
+    },
+    public_id: (req, file) => Date.now().toString(),
   },
 });
+
+
 
 const upload = multer({
   storage,
@@ -195,12 +213,21 @@ router.post("/payment-requests/:id/approve", async (req, res) => {
 
 
       // Delete uploaded image
-      if (payment_image_path) {
-        const filePath = path.join(__dirname, "../uploads", payment_image_path);
-        fs.unlink(filePath, (err) => {
-          if (err) console.error("Failed to delete image:", err);
-        });
-      }
+     if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
+  try {
+    // Extract public_id from the full URL
+    const urlParts = payment_image_path.split('/');
+    const fileNameWithExt = urlParts[urlParts.length - 1]; // e.g., abc123xyz.jpg
+    const folder = urlParts[urlParts.length - 2];           // e.g., my-app-uploads
+
+    const public_id = `${folder}/${fileNameWithExt.split('.')[0]}`; // remove extension
+
+    await cloudinary.uploader.destroy(public_id);
+    console.log("🗑️ Cloudinary image deleted:", public_id);
+  } catch (err) {
+    console.error("Failed to delete Cloudinary image:", err);
+  }
+}
 
 
  // 7. Send confirmation email
@@ -246,12 +273,21 @@ router.post("/payment-requests/:id/reject", async (req, res) => {
     await db.query("UPDATE program_payment_requests SET status = 'rejected' WHERE id = ?", [id]);
 
     // Delete image
-    if (request.payment_image_path) {
-      const filePath = path.join(__dirname, "../uploads", request.payment_image_path);
-      fs.unlink(filePath, (err) => {
-        if (err) console.error("Failed to delete image:", err);
-      });
-    }
+if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
+  try {
+    // Extract public_id from the full URL
+    const urlParts = payment_image_path.split('/');
+    const fileNameWithExt = urlParts[urlParts.length - 1]; // e.g., abc123xyz.jpg
+    const folder = urlParts[urlParts.length - 2];           // e.g., my-app-uploads
+
+    const public_id = `${folder}/${fileNameWithExt.split('.')[0]}`; // remove extension
+
+    await cloudinary.uploader.destroy(public_id);
+    console.log("🗑️ Cloudinary image deleted:", public_id);
+  } catch (err) {
+    console.error("Failed to delete Cloudinary image:", err);
+  }
+}
 
 
 

@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const db = require('../db');
 const sendOTPviaEmail = require('../utils/email'); // Adjust path
 
+const { generateToken } = require('../utils/jwt');
 
 const router = express.Router();
 
@@ -82,8 +83,10 @@ router.post('/signup', async (req, res) => {
     const userId = `MMK_U_${result.insertId}`;
     await db.query('UPDATE users SET user_id = ? WHERE id = ?', [userId, result.insertId]);
 
-    req.session.user = { id: result.insertId, name, email,phone, user_id: userId };
-    return res.status(200).json({ message: 'User registered', user_id: userId, name, email });
+        const token = generateToken({ user_id: userId, name, email });
+    // req.session.user = { id: result.insertId, name, email,phone, user_id: userId };
+
+    return res.status(200).json({ message: 'Signup successful', token, user_id: userId, name, email });
   } catch (err) {
     console.error('Signup error:', err); // ✅ Still logs the error
     return res.status(500).json({ error: 'Server error during registration' });
@@ -104,14 +107,16 @@ router.post('/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
-    req.session.user = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      user_id: user.user_id,
-    };
+    // req.session.user = {
+    //   id: user.id,
+    //   name: user.name,
+    //   email: user.email,
+    //   user_id: user.user_id,
+    // };
 
-    return res.json({ message: 'Login successful', user_id: user.user_id, name: user.name, email: user.email });
+        const token = generateToken(user);
+
+    return res.status(200).json({ message: 'Login successful', token, user_id: user.user_id, name: user.name, email: user.email });
   } catch (err) {
     console.error('Login error:', err);
     return res.status(500).json({ error: 'Server error during login' });
@@ -122,70 +127,87 @@ router.post('/login', async (req, res) => {
 
 
 
-//admin_login
-
-
-
+// ➤ Admin Login
 router.post('/admin_login', async (req, res) => {
   const { email, password } = req.body;
-  try {
-    const [results] = await db.query('SELECT * FROM admin WHERE email = ?', [email]);
-    if (results.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+  const [results] = await db.query('SELECT * FROM admin WHERE email = ?', [email]);
+  if (results.length === 0 || results[0].password !== password)
+    return res.status(401).json({ error: 'Invalid admin credentials' });
 
-    const admin = results[0];
-    if (password !== admin.password) return res.status(401).json({ error: 'Invalid credentials' });
+  const admin = results[0];
+  const token = generateToken({ email: admin.email, admin_id: admin.id });
 
-    req.session.admin = {
-      id: admin.id,
-      email: admin.email,
-
-    };
-
-    return res.json({ message: 'Login successful', admin_id: admin.id, email: admin.email });
-  } catch (err) {
-    console.error('Login error:', err);
-    return res.status(500).json({ error: 'Server error during login' });
-  }
+  return res.json({ message: 'Admin login successful', token, admin_id: admin.id, email: admin.email });
 });
+
+
+// ➤ Logout
+// router.post('/logout', (req, res) => {
+//   return res.json({ message: 'Logged out (client must remove token)' });
+// });
+
 
 
 //admin_session
 // Check Session
-router.get('/admin_session', (req, res) => {
-  if (req.session.admin) {
-    return res.json({ loggedIn: true, admin: req.session.admin });
-  } else {
-    return res.json({ loggedIn: false });
-  }
-});
+// router.get('/admin_session', (req, res) => {
+//   if (req.session.admin) {
+//     return res.json({ loggedIn: true, admin: req.session.admin });
+//   } else {
+//     return res.json({ loggedIn: false });
+//   }
+// });
 
 //admin_logout
 
-router.post('/admin_logout', (req, res) => {
-  req.session.destroy();
-  res.json({ message: 'Logged out' });
-});
-
-module.exports = router;
+// router.post('/admin_logout', (req, res) => {
+//   req.session.destroy();
+//   res.json({ message: 'Logged out' });
+// });
 
 
 
 // Check Session
+// router.get('/session', (req, res) => {
+//   if (req.session.user) {
+//     return res.json({ loggedIn: true, user: req.session.user });
+//   } else {
+//     return res.json({ loggedIn: false });
+//   }
+// });
+
+
 router.get('/session', (req, res) => {
-  if (req.session.user) {
-    return res.json({ loggedIn: true, user: req.session.user });
-  } else {
-    return res.json({ loggedIn: false });
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ loggedIn: false });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = verifyToken(token); // Use your `verifyToken` function
+    return res.status(200).json({ loggedIn: true, user: decoded });
+  } catch (err) {
+    console.error("Session check failed:", err.message);
+    return res.status(401).json({ loggedIn: false });
   }
 });
-
-
-
 // Logout
-router.post('/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ message: 'Logged out' });
-});
+// Logout Route (JWT-based)
+// router.post('/logout', (req, res) => {
+//   // Optional: Invalidate JWT on frontend (by deleting cookie/localStorage)
+  
+//   // If you're setting JWT in a cookie, clear it like this:
+//   res.clearCookie('token', {
+//     httpOnly: true,
+//     secure: true,
+//     sameSite: 'None',
+//   });
+
+//   return res.json({ message: 'Logged out successfully' });
+// });
 
 
 
