@@ -59,9 +59,9 @@ router.get("/", async (req, res) => {
     //     event.image = `${event.image}`;
     //   }
     // });
-    
 
-   
+
+
 
     res.json(rows);
   } catch (err) {
@@ -463,7 +463,7 @@ router.get("/:eventId/attendees", async (req, res) => {
 router.post("/send-certificates/:eventId", async (req, res) => {
   const { eventId } = req.params;
   const { type } = req.query; // 'joined' or 'participated'
-
+  const { description } = req.body;
   if (!['joined', 'participated'].includes(type)) {
     return res.status(400).json({ error: 'Invalid type. Use "joined" or "participated".' });
   }
@@ -489,7 +489,9 @@ router.post("/send-certificates/:eventId", async (req, res) => {
     }
 
     for (const attendee of attendees) {
-      const certPath = generateCertificate(attendee.name, attendee.event_name);
+      // const certPath = generateCertificate(attendee.name, attendee.event_name);
+      const certPath = await generateCertificate(attendee.name, attendee.event_name, description);
+
       await sendEmail(attendee.email, attendee.name, certPath);
     }
 

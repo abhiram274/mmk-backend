@@ -27,6 +27,7 @@
     "mysql2": "^3.14.1",
     "nodemailer": "^7.0.3",
     "nodemon": "^3.1.10",
+    "pdf-lib": "^1.17.1",
     "promise": "^8.3.0",
     "twilio": "^5.6.1"
   }
