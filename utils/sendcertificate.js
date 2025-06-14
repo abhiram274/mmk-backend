@@ -1,13 +1,13 @@
 const fs = require('fs');
 // const PDFDocument = require('pdfkit');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-
+const path = require('path');
 const nodemailer = require('nodemailer');
 require("dotenv").config();
 
 
 async function generateCertificate(name, eventName, description = "") {
-  const templatePath = path.join(__dirname, '../../template-certificate.pdf');
+  const templatePath = path.join(__dirname, '../template-certificate.pdf');
   const fileName = `certificates/${name.replace(/\s/g, "_")}_${Date.now()}.pdf`;
 
   if (!fs.existsSync('certificates')) {
@@ -43,15 +43,27 @@ async function generateCertificate(name, eventName, description = "") {
   const descX = (pageWidth - descWidth) / 2;
   const descY = nameY - 40; // Spaced below name
 
-  if (description) {
-    firstPage.drawText(description, {
-      x: descX,
-      y: descY,
+if (description) {
+  const lines = description.split('\n');
+  const lineHeight = 18;
+  let currentY = descY;
+
+  for (const line of lines) {
+    const lineWidth = font.widthOfTextAtSize(line, descFontSize);
+    const lineX = (pageWidth - lineWidth) / 2;
+
+    firstPage.drawText(line, {
+      x: lineX,
+      y: currentY,
       size: descFontSize,
       font,
       color: rgb(0.15, 0.15, 0.15),
     });
+
+    currentY -= lineHeight;
   }
+}
+
 
   const pdfBytes = await pdfDoc.save();
   fs.writeFileSync(fileName, pdfBytes);
