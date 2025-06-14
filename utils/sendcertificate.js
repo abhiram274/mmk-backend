@@ -27,7 +27,7 @@ require("dotenv").config();
 // }
 
 async function generateCertificate(name, eventName, description = "") {
-  const templatePath = path.join(__dirname, '../template-certificate.pdf'); // Update if different
+  const templatePath = path.join(__dirname, '../../template-certificate.pdf');
   const fileName = `certificates/${name.replace(/\s/g, "_")}_${Date.now()}.pdf`;
 
   if (!fs.existsSync('certificates')) {
@@ -40,32 +40,36 @@ async function generateCertificate(name, eventName, description = "") {
   const firstPage = pages[0];
 
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontSize = 18;
 
-  // These coordinates are example values — you need to adjust them based on your template layout
+  const pageWidth = firstPage.getWidth();
+
+  // 🧑 Name on underline
+  const nameFontSize = 24;
+  const nameWidth = font.widthOfTextAtSize(name, nameFontSize);
+  const nameX = (pageWidth - nameWidth) / 2;
+  const nameY = 310; // Adjusted to fall on the underline
+
   firstPage.drawText(name, {
-    x: 200,
-    y: 300,
-    size: fontSize,
+    x: nameX,
+    y: nameY,
+    size: nameFontSize,
     font,
-    color: rgb(0, 0, 0),
+    color: rgb(0.1, 0.1, 0.1),
   });
 
-  firstPage.drawText(eventName, {
-    x: 200,
-    y: 270,
-    size: 14,
-    font,
-    color: rgb(0, 0, 0),
-  });
+  // 📄 Description below name
+  const descFontSize = 14;
+  const descWidth = font.widthOfTextAtSize(description, descFontSize);
+  const descX = (pageWidth - descWidth) / 2;
+  const descY = nameY - 40; // Spaced below name
 
   if (description) {
     firstPage.drawText(description, {
-      x: 200,
-      y: 240,
-      size: 12,
+      x: descX,
+      y: descY,
+      size: descFontSize,
       font,
-      color: rgb(0, 0, 0),
+      color: rgb(0.15, 0.15, 0.15),
     });
   }
 
