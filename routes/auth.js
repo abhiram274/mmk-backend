@@ -130,14 +130,21 @@ router.post('/login', async (req, res) => {
 // ➤ Admin Login
 router.post('/admin_login', async (req, res) => {
   const { email, password } = req.body;
+  try 
+  {
   const [results] = await db.query('SELECT * FROM admin WHERE email = ?', [email]);
   if (results.length === 0 || results[0].password !== password)
     return res.status(401).json({ error: 'Invalid admin credentials' });
 
   const admin = results[0];
-  const token = generateToken({ email: admin.email, admin_id: admin.id });
+  const token = generateToken({ email: admin.email});
 
-  return res.json({ message: 'Admin login successful', token, admin_id: admin.id, email: admin.email });
+  return res.json({ message: 'Admin login successful', token, email: admin.email });
+}
+catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Server error during login' });
+  }
 });
 
 

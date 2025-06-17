@@ -119,6 +119,30 @@ async function sendConfirmationEmail(toEmail, programTitle) {
   }
 }
 
+async function sendRejectionEmail(toEmail, programTitle) {
+  console.log("✉️ Preparing to send confirmation email to:", toEmail);
+
+  let transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"MMK Universe Team" <${process.env.EMAIL_USER}>`,
+      to: toEmail,
+      subject: `Registration rejected for ${programTitle}`,
+      text: `Hello! Your registration for the program "${programTitle}" was rejected.`,
+    });
+
+    console.log("✅ Email sent:", info.messageId);
+  } catch (err) {
+    console.error("❌ Failed to send email:", err);
+  }
+}
 
 
 // Get pending payment requests
@@ -231,7 +255,7 @@ router.post("/payment-requests/:id/approve", async (req, res) => {
 
 
  // 7. Send confirmation email
-    let email, event_title;
+    let email, program_title;
 
     if (submission_type === "guest") {
       email = guest_email;
@@ -273,8 +297,11 @@ router.post("/payment-requests/:id/reject", async (req, res) => {
     await db.query("UPDATE program_payment_requests SET status = 'rejected' WHERE id = ?", [id]);
 
     // Delete image
+// if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
+const payment_image_path = request.payment_image_path;
+
 if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
-  try {
+try {
     // Extract public_id from the full URL
     const urlParts = payment_image_path.split('/');
     const fileNameWithExt = urlParts[urlParts.length - 1]; // e.g., abc123xyz.jpg
@@ -288,6 +315,31 @@ if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
     console.error("Failed to delete Cloudinary image:", err);
   }
 }
+
+
+ // 7. Send confirmation email
+    let email, program_title;
+
+    if (submission_type === "guest") {
+      email = guest_email;
+    } else {
+      const [[user]] = await db.query("SELECT email FROM users WHERE user_id = ?", [user_id]);
+      email = user?.email;
+    }
+
+    const [[program]] = await db.query("SELECT title FROM programs WHERE id = ?", [program_id]);
+    program_title = program?.title;
+
+    console.log("📨 Sending email to:", email, "for program:", program_title);
+
+
+
+    if (!email) {
+  console.error("❌ Email address is missing, cannot send confirmation");
+  return res.status(500).json({ error: "Missing recipient email" });
+}
+    await sendRejectionEmail(email, program_title);
+
 
 
 

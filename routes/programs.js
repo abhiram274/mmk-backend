@@ -68,16 +68,50 @@ router.get("/", async (req, res) => {
 
 
 // Get all *non-completed* programs
-router.get("/non-complete", async (req, res) => {
-  try {
-    const [rows] = await db.query("SELECT * FROM programs WHERE completed = FALSE");
+// router.get("/non-complete", async (req, res) => {
+//   try {
+//     const [rows] = await db.query("SELECT * FROM programs WHERE completed = FALSE");
     
-    res.json(rows);
+//     res.json(rows);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+router.get("/non-complete", async (req, res) => {
+  const { user_id } = req.query;
+
+  try {
+    let [programs] = await db.query("SELECT * FROM programs WHERE completed = FALSE ORDER BY id DESC");
+
+    if (user_id) {
+      // Get user's enrolled events
+      const [enrollments] = await db.query(
+        `SELECT program_id FROM program_attendees WHERE user_id = ?`,
+        [user_id]
+      );
+      const enrolledProgramIds = new Set(enrollments.map(p => p.program_id));
+
+      // Add isEnrolled field to each event
+      programs = programs.map(program => ({
+        ...program,
+        isEnrolled: enrolledProgramIds.has(program.id)
+      }));
+    } else {
+      // If user_id not provided, set all to false
+      programs = programs.map(program => ({
+        ...program,
+        isEnrolled: false
+      }));
+    }
+
+    res.json(programs);
   } catch (err) {
+    console.error("DB Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 
 
@@ -185,8 +219,8 @@ router.post("/",
 
 
 // In routes/events.js or a new route file
-router.get("/check-attendance", async (req, res) => {
-  const { userId, programId } = req.query;
+router.get("/check-attendance/:userId/:programId", async (req, res) => {
+  const { userId, programId } = req.params;
 
   if (!userId || !programId) {
     return res.status(400).json({ error: "Missing userId or programId" });
@@ -531,6 +565,7 @@ router.get("/:programId/attendees", async (req, res) => {
 router.post("/send-certificates/:programId", async (req, res) => {
   const { programId } = req.params;
   const { type } = req.query; // 'joined' or 'participated'
+  const { description } = req.body;
 
   if (!['joined', 'participated'].includes(type)) {
     return res.status(400).json({ error: 'Invalid type. Use "joined" or "participated".' });
@@ -538,7 +573,7 @@ router.post("/send-certificates/:programId", async (req, res) => {
 
   try {
     // If 'participated', filter by participated=1; else get all attendees.
-    const participationCondition = type === 'participated' ? 'AND ea.participated = 1' : '';
+    const participationCondition = type === 'participated' ? 'AND pa.participated = 1' : '';
 
     const [attendees] = await db.query(`
       SELECT 
@@ -547,7 +582,7 @@ router.post("/send-certificates/:programId", async (req, res) => {
         p.title AS program_name
       FROM program_attendees pa
       LEFT JOIN users u ON u.user_id = pa.user_id
-      JOIN programs e ON p.id = pa.program_id
+      JOIN programs p ON p.id = pa.program_id
       WHERE pa.program_id = ?
       ${participationCondition}
     `, [programId]);
@@ -558,7 +593,9 @@ router.post("/send-certificates/:programId", async (req, res) => {
     }
 
     for (const attendee of attendees) {
-      const certPath = generateCertificate(attendee.name, attendee.program_name);
+      // const certPath = generateCertificate(attendee.name, attendee.program_name);
+            const certPath = await generateCertificate(attendee.name, attendee.program_name, description);
+
       await sendEmail(attendee.email, attendee.name, certPath);
     }
 

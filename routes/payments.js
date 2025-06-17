@@ -116,6 +116,32 @@ async function sendConfirmationEmail(toEmail, eventTitle) {
   }
 }
 
+//Mailer
+async function sendRejectionEmail(toEmail, eventTitle) {
+  console.log("✉️ Preparing to send confirmation email to:", toEmail);
+
+  let transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"MMK Universe Team" <${process.env.EMAIL_USER}>`,
+      to: toEmail,
+      subject: `Registration rejected for ${eventTitle}`,
+      text: `Hello! Your registration for the event "${eventTitle}" was rejected.`,
+    });
+
+    console.log("✅ Email sent:", info.messageId);
+  } catch (err) {
+    console.error("❌ Failed to send email:", err);
+  }
+}
+
 //  SELECT p.*, e.title AS event_title 
 //   FROM event_payment_requests p
 //   JOIN events e ON p.event_id = e.id
@@ -298,11 +324,13 @@ router.post("/payment-requests/:id/reject", async (req, res) => {
     const [[request]] = await db.query("SELECT * FROM event_payment_requests WHERE id = ?", [id]);
     if (!request) return res.status(404).json({ error: "Request not found" });
 
-
     await db.query("UPDATE event_payment_requests SET status = 'rejected' WHERE id = ?", [id]);
 
     // Delete image
       // 6. Delete uploaded image
+// if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
+const payment_image_path = request.payment_image_path;
+
 if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
   try {
     // Extract public_id from the full URL
@@ -320,6 +348,22 @@ if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
 }
 
 
+    // 7. Send confirmation email
+    let email, event_title;
+    if (submission_type === "guest") {
+      email = guest_email;
+    } else {
+      const [[user]] = await db.query("SELECT email FROM users WHERE user_id = ?", [user_id]);
+      email = user?.email;
+    }
+    const [[event]] = await db.query("SELECT title FROM events WHERE id = ?", [event_id]);
+    event_title = event?.title;
+    console.log("📨 Sending email to:", email, "for event:", event_title);
+    if (!email) {
+  console.error("❌ Email address is missing, cannot send confirmation");
+  return res.status(500).json({ error: "Missing recipient email" });
+}
+    await sendRejectionEmail(email, event_title);
 
 
     res.json({ message: "Payment rejected" });
@@ -329,6 +373,38 @@ if (payment_image_path && payment_image_path.includes("cloudinary.com")) {
   }
 });
 
+
+
+// Check guest email status for an event
+router.get("/:id/check-guest/:email", async (req, res) => {
+  const event_id = req.params.id;
+  const guest_email = req.params.email;
+
+  try {
+    const [pending] = await db.query(
+      "SELECT id FROM event_payment_requests WHERE event_id = ? AND guest_email = ? AND status = 'pending'",
+      [event_id, guest_email]
+    );
+
+    if (pending.length > 0) {
+      return res.json({ status: "You are already in pending list" });
+    }
+
+    const [joined] = await db.query(
+      "SELECT id FROM event_attendees WHERE event_id = ? AND guest_email = ?",
+      [event_id, guest_email]
+    );
+
+    if (joined.length > 0) {
+      return res.json({ status: "You have already joined" });
+    }
+
+    return res.json({ status: "new" });
+  } catch (err) {
+    console.error("Error checking guest:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
 
 
 
